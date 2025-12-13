@@ -33,7 +33,7 @@ def process_zipped_memory(zip_path: str, output_path: str) -> None:
                 "-i",
                 overlay_file,
                 "-filter_complex",
-                "[1][0]scale2ref=w=iw:h=ih[ov][base];[base][ov]overlay=0:0",
+                "[0]split[base][ref];[1][ref]scale=w=rw:h=rh[ov];[base][ov]overlay=0:0",
                 "-crf",
                 "18",
                 "-c:a",
@@ -52,7 +52,9 @@ def process_zipped_memory(zip_path: str, output_path: str) -> None:
         overlap_file = png_files[0]
         output_image_file = image_file.replace("-main", "")
 
-        background = Image.open(image_file).convert("RGBA")
+        background_img = Image.open(image_file)
+        background = background_img.convert("RGBA")
+        background_exif = background_img.getexif()
         foreground = Image.open(overlap_file).convert("RGBA")
 
         if background.size != foreground.size:
@@ -62,7 +64,7 @@ def process_zipped_memory(zip_path: str, output_path: str) -> None:
             foreground = foreground.resize(background.size)
 
         composite_img = Image.alpha_composite(background, foreground)
-        composite_img.convert("RGB").save(output_image_file, quality=95)
+        composite_img.convert("RGB").save(output_image_file, quality=95, exif=background_exif)
 
         # Copy to output dir
         shutil.copy(output_image_file, output_path)
