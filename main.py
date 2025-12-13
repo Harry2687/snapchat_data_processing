@@ -1,4 +1,5 @@
 import glob
+import hashlib
 import os
 import shutil
 import subprocess
@@ -106,7 +107,7 @@ def get_non_zip_files_in_dir(dir_path: str) -> list[str]:
     return non_zip_files
 
 
-def get_media_overlay_pairs(directory_path: str) -> list[list]:
+def get_media_overlay_pairs(directory_path: str) -> list[list[str]]:
     files_by_mtime = defaultdict(list)
 
     for filename in os.listdir(directory_path):
@@ -136,8 +137,20 @@ def get_media_overlay_pairs(directory_path: str) -> list[list]:
 
         if len(media_files) == 1 and len(overlay_files) == 1:
             matched_pairs.append([media_files[0], overlay_files[0], mtime_human])
-        elif len(media_files) > 1 or len(overlay_files) > 1:
-            print(f"More than one media/overlay file: {mtime_human}")
+        elif len(media_files) > 1 and len(overlay_files) > 1:
+            # Check if overlay files are all the same
+            overlay_hashes = [
+                hashlib.md5(open(overlay_file, "rb").read()).hexdigest()
+                for overlay_file in overlay_files
+            ]
+            if len(set(overlay_hashes)) == 1:
+                # Pair all media files with the same overlay
+                for media_file in media_files:
+                    matched_pairs.append([media_file, overlay_files[0], mtime_human])
+        elif len(overlay_files) == 0:
+            pass
+        else:
+            print(f"{mtime_human}: Overlay exists without base media.")
 
     return matched_pairs
 
@@ -157,7 +170,7 @@ def get_non_media_overlay_pairs(directory_path: str) -> list[list[str]]:
     ]
 
     # Other unwanted items
-    filter_out_list = ["_thumbnail", "_metadata"]
+    filter_out_list = ["_thumbnail", "_metadata", "_overlay"]
 
     non_media_overlay_pairs = [
         file
@@ -180,7 +193,18 @@ def process_media_overlay_pairs(matched_pairs: list[list], output_path: str) -> 
 
         media_extension = Path(media_file).suffix.lower()
         if media_extension == ".mp4":
-            overlay_video(media_file, overlay_file, output_media_file)
+            # Convert overlay to png first since webp sometimes causes issues with ffmpeg
+            overlay_extension = Path(overlay_file).suffix.lower()
+            if overlay_extension == ".webp":
+                overlay_image = Image.open(overlay_file)
+                overlay_file_png = overlay_file.replace(overlay_extension, ".png")
+                overlay_image.save(overlay_file_png, "PNG")
+
+                overlay_video(media_file, overlay_file_png, output_media_file)
+
+                os.remove(overlay_file_png)
+            else:
+                overlay_video(media_file, overlay_file, output_media_file)
 
             # Change modified time to match original file
             original_mtime = os.path.getmtime(media_file)
