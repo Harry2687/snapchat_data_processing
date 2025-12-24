@@ -1,5 +1,7 @@
 import glob
 import hashlib
+import json
+import logging
 import os
 import re
 import shutil
@@ -13,6 +15,10 @@ from pathlib import Path
 import piexif
 import requests
 from PIL import Image
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 # Stuff to overlay captions to videos/images
@@ -215,6 +221,11 @@ def download_memory(url: str, output_path: str) -> str:
 
 
 def process_memory(url: str, date: str, location: str, output_path: str):
+    def set_modified_time(file_path, date):
+        date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S %Z")
+        timestamp = date_obj.timestamp()
+        os.utime(file_path, (timestamp, timestamp))
+
     with tempfile.TemporaryDirectory() as temp_dir:
         raw_file_path = download_memory(url=url, output_path=temp_dir)
         raw_file_extension = Path(raw_file_path).suffix.lower()
@@ -230,9 +241,7 @@ def process_memory(url: str, date: str, location: str, output_path: str):
             elif overlayed_file_extension == ".jpg":
                 add_gps_to_image(file_path=overlayed_file_path, lat=lat, lon=lon)
 
-            date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S %Z")
-            timestamp = date_obj.timestamp()
-            os.utime(overlayed_file_path, (timestamp, timestamp))
+            set_modified_time(file_path=overlayed_file_path, date=date)
 
             # Copy to output dir
             os.makedirs(output_path, exist_ok=True)
@@ -242,6 +251,8 @@ def process_memory(url: str, date: str, location: str, output_path: str):
                 add_gps_to_video(file_path=raw_file_path, lat=lat, lon=lon)
             elif raw_file_extension == ".jpg":
                 add_gps_to_image(file_path=raw_file_path, lat=lat, lon=lon)
+
+            set_modified_time(file_path=raw_file_path, date=date)
 
             # Copy to output dir
             os.makedirs(output_path, exist_ok=True)
@@ -359,29 +370,45 @@ def process_media_overlay_pairs(matched_pairs: list[list], output_path: str) -> 
 
 
 def main() -> None:
-    # memories_path = "./data/memories"
-    # memories_output_path = "./data/processed_memories"
+    memories_json_path = "./data/memories_history.json"
+    memories_output_path = "./data/processed_memories"
 
-    # for zip in get_zip_files_in_dir(memories_path):
-    #     process_zipped_memory(zip, memories_output_path)
+    with open(memories_json_path) as f:
+        memories_history = json.load(f)
 
-    # for non_zip in get_non_zip_files_in_dir(memories_path):
-    #     shutil.copy(non_zip, memories_output_path)
+    saved_media = memories_history["Saved Media"]
+    total_memories = len(saved_media)
 
-    chat_media_path = "./data/chat_media"
-    chat_media_output_path = "./data/processed_chat_media"
+    logging.info(f"Found {total_memories} memories to process.")
 
-    media_overlay_pairs = get_media_overlay_pairs(chat_media_path)
-    process_media_overlay_pairs(media_overlay_pairs, chat_media_output_path)
+    for index, memory in enumerate(saved_media, start=1):
+        date = memory["Date"]
 
-    for file_path in get_non_media_overlay_pairs(chat_media_path):
-        shutil.copy(file_path, chat_media_output_path)
-        original_mtime = os.path.getmtime(file_path)
-        _, file_name = os.path.split(file_path)
-        os.utime(
-            os.path.join(chat_media_output_path, file_name),
-            (original_mtime, original_mtime),
+        logging.info(f"[{index}/{total_memories}] Processing memory from {date}...")
+
+        process_memory(
+            url=memory["Media Download Url"],
+            date=date,
+            location=memory["Location"],
+            output_path=memories_output_path,
         )
+
+    logging.info("Processing complete.")
+
+    # chat_media_path = "./data/chat_media"
+    # chat_media_output_path = "./data/processed_chat_media"
+
+    # media_overlay_pairs = get_media_overlay_pairs(chat_media_path)
+    # process_media_overlay_pairs(media_overlay_pairs, chat_media_output_path)
+
+    # for file_path in get_non_media_overlay_pairs(chat_media_path):
+    #     shutil.copy(file_path, chat_media_output_path)
+    #     original_mtime = os.path.getmtime(file_path)
+    #     _, file_name = os.path.split(file_path)
+    #     os.utime(
+    #         os.path.join(chat_media_output_path, file_name),
+    #         (original_mtime, original_mtime),
+    #     )
 
 
 if __name__ == "__main__":
