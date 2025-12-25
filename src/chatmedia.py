@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import shutil
 from collections import defaultdict
@@ -28,7 +29,7 @@ def get_media_overlay_pairs(directory_path: str) -> list[list[str]]:
                 )
 
         except Exception as e:
-            print(f"Could not process file {filename}: {e}")
+            logging.error(f"Could not process file {filename}: {e}")
             continue
 
     matched_pairs = []
@@ -53,7 +54,7 @@ def get_media_overlay_pairs(directory_path: str) -> list[list[str]]:
         elif len(overlay_files) == 0:
             pass
         else:
-            print(f"{mtime_human}: Overlay exists without base media.")
+            logging.error(f"{mtime_human}: Overlay exists without base media.")
 
     return matched_pairs
 
@@ -112,8 +113,28 @@ def process_media_overlay_pairs(matched_pairs: list[list], output_path: str) -> 
             # Change modified time to match original file
             original_mtime = os.path.getmtime(media_file)
             os.utime(output_media_file, (original_mtime, original_mtime))
+            logging.info(f"Overlayed and updated timestamp for: {new_media_name}")
         else:
-            print(f"{mtime_human}: No mp4 files.")
+            logging.error(f"{mtime_human}: No mp4 files.")
 
         os.makedirs(output_path, exist_ok=True)
         shutil.move(output_media_file, output_path)
+
+
+def process_chat_media_folder(folder_path: str, output_path: str) -> None:
+    media_overlay_pairs = get_media_overlay_pairs(folder_path)
+    logging.info(f"Found {len(media_overlay_pairs)} media-overlay pairs to process.")
+
+    process_media_overlay_pairs(media_overlay_pairs, output_path)
+
+    non_media_files = get_non_media_overlay_pairs(folder_path)
+    logging.info(f"Copying {len(non_media_files)} standalone files...")
+    for file_path in non_media_files:
+        shutil.copy(file_path, output_path)
+        original_mtime = os.path.getmtime(file_path)
+        _, file_name = os.path.split(file_path)
+        os.utime(
+            os.path.join(output_path, file_name),
+            (original_mtime, original_mtime),
+        )
+        logging.info(f"Copied and updated timestamp for: {file_name}")
