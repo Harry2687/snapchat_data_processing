@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import shutil
@@ -8,37 +7,17 @@ from src.chatmedia import (
     get_non_media_overlay_pairs,
     process_media_overlay_pairs,
 )
-from src.memories import process_memory
+from src.memories import process_memory_json
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+
 def main() -> None:
     memories_json_path = "./data/memories_history.json"
     memories_output_path = "./data/processed_memories"
-
-    with open(memories_json_path) as f:
-        memories_history = json.load(f)
-
-    saved_media = memories_history["Saved Media"]
-    total_memories = len(saved_media)
-
-    logging.info(f"Found {total_memories} memories to process.")
-
-    for index, memory in enumerate(saved_media, start=1):
-        date = memory["Date"]
-
-        logging.info(f"[{index}/{total_memories}] Processing memory from {date}...")
-
-        process_memory(
-            url=memory["Media Download Url"],
-            date=date,
-            location=memory["Location"],
-            output_path=memories_output_path,
-        )
-
-    logging.info("Processing complete.")
+    process_memory_json(json_path=memories_json_path, output_path=memories_output_path)
 
     chat_media_path = "./data/chat_media"
     chat_media_output_path = "./data/processed_chat_media"

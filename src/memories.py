@@ -1,9 +1,12 @@
 import glob
+import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +17,7 @@ import requests
 from overlay import overlay_image, overlay_video
 
 
-def overlay_zipped_memory(zip_path: str, output_path: str) -> None:
+def overlay_zipped_memory(zip_path: str, output_path: str) -> str:
     # Extract zip into temp dir
     with tempfile.TemporaryDirectory() as temp_dir:
         with zipfile.ZipFile(zip_path, "r") as zip:
@@ -62,12 +65,12 @@ def overlay_zipped_memory(zip_path: str, output_path: str) -> None:
             )
 
         else:
-            print(f"Memory not in mp4 or jpg format: {zip_path}")
+            logging.warning(f"Memory not in mp4 or jpg format: {zip_path}")
 
     return final_output_path
 
 
-def add_gps_to_video(file_path, lat, lon):
+def add_gps_to_video(file_path: str, lat: float, lon: float) -> None:
     # 1. Prepare the ISO 6709 location string
     # Format: ±Lat±Long/ (e.g., -31.9547+115.8602/)
     location_string = f"{lat:+08.4f}{lon:+09.4f}/"
@@ -95,15 +98,15 @@ def add_gps_to_video(file_path, lat, lon):
 
         # 4. Replace the original file with the new one
         os.replace(temp_file, file_path)
-        print(f"Successfully updated metadata for {file_path}")
+        logging.info(f"Successfully updated metadata for {file_path}")
 
     except subprocess.CalledProcessError as e:
-        print(f"Error occurred: {e.stderr.decode()}")
+        logging.error(f"Error occurred: {e.stderr.decode()}")
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
 
-def add_gps_to_image(file_path, lat, lon):
+def add_gps_to_image(file_path: str, lat: float, lon: float) -> None:
     def decimal_to_dms(value):
         abs_value = abs(value)
         deg = int(abs_value)
@@ -126,39 +129,47 @@ def add_gps_to_image(file_path, lat, lon):
 
     exif_bytes = piexif.dump(exif_dict)
     piexif.insert(exif_bytes, file_path)
+    logging.info(f"Successfully updated metadata for {file_path}")
 
 
-def download_memory(url: str, output_path: str) -> str:
-    response = requests.get(url)
+def download_memory(
+    url: str, output_path: str, max_retries: int = 3, delay: int = 2
+) -> str:
+    attempts = 0
+    content_disposition = None
+    response = None
 
-    # Look for the 'Content-Disposition' header
-    content_disposition = response.headers.get("content-disposition")
+    while attempts < max_retries:
+        response = requests.get(url)
+        content_disposition = response.headers.get("content-disposition")
 
+        if content_disposition:
+            break  # Found it, exit the loop
+
+        attempts += 1
+        logging.warning(
+            f"Header not found. Attempt {attempts}/{max_retries}. Retrying in {delay}s..."
+        )
+        time.sleep(delay)
+
+    # Logic for filename extraction
     if content_disposition:
-        # Use a regex to find the filename attribute
         fname_match = re.findall("filename=(.+)", content_disposition)
-        if fname_match:
-            # Clean up quotes if present
-            filename = fname_match[0].strip('"')
-        else:
-            # Fallback to the end of the URL if header doesn't have a filename
-            filename = url.split("/")[-1]
+        filename = fname_match[0].strip('"') if fname_match else url.split("/")[-1]
     else:
-        # Fallback to the end of the URL
+        # Final fallback if retries failed
         filename = url.split("/")[-1]
 
     file_path = os.path.join(output_path, filename)
-
     os.makedirs(output_path, exist_ok=True)
 
-    # Save the file using the extracted name
     with open(file_path, "wb") as f:
         f.write(response.content)
 
     return file_path
 
 
-def process_memory(url: str, date: str, location: str, output_path: str):
+def process_memory(url: str, date: str, location: str, output_path: str) -> None:
     def set_modified_time(file_path, date):
         date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S %Z")
         timestamp = date_obj.timestamp()
@@ -195,3 +206,27 @@ def process_memory(url: str, date: str, location: str, output_path: str):
             # Copy to output dir
             os.makedirs(output_path, exist_ok=True)
             shutil.move(raw_file_path, output_path)
+
+
+def process_memory_json(json_path: str, output_path: str) -> None:
+    with open(json_path) as f:
+        memories_history = json.load(f)
+
+    saved_media = memories_history["Saved Media"]
+    total_memories = len(saved_media)
+
+    logging.info(f"Found {total_memories} memories to process.")
+
+    for index, memory in enumerate(saved_media, start=1):
+        date = memory["Date"]
+
+        logging.info(f"[{index}/{total_memories}] Processing memory from {date}...")
+
+        process_memory(
+            url=memory["Media Download Url"],
+            date=date,
+            location=memory["Location"],
+            output_path=output_path,
+        )
+
+    logging.info("Processing complete.")
