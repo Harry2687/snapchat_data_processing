@@ -10,6 +10,7 @@ import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import piexif
 import requests
@@ -171,8 +172,11 @@ def download_memory(
 
 def process_memory(url: str, date: str, location: str, output_path: str) -> None:
     def set_modified_time(file_path, date):
-        date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S %Z")
-        timestamp = date_obj.timestamp()
+        date_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S %Z").replace(
+            tzinfo=ZoneInfo("UTC")
+        )
+        date_obj_perth = date_obj.astimezone(ZoneInfo("Australia/Perth"))
+        timestamp = date_obj_perth.timestamp()
         os.utime(file_path, (timestamp, timestamp))
 
     with tempfile.TemporaryDirectory() as temp_dir:

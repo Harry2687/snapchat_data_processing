@@ -10,7 +10,7 @@ logging.basicConfig(
 
 def main() -> None:
     memories_json_path = "./data/memories_history.json"
-    memories_output_path = "./data/processed_memories_v2"
+    memories_output_path = "./data/processed_memories_v3"
     process_memory_json(json_path=memories_json_path, output_path=memories_output_path)
 
     chat_media_path = "./data/chat_media_v2"
