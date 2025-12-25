@@ -14,7 +14,7 @@ from pathlib import Path
 import piexif
 import requests
 
-from overlay import overlay_image, overlay_video
+from .overlay import overlay_image, overlay_video
 
 
 def overlay_zipped_memory(zip_path: str, output_path: str) -> str:

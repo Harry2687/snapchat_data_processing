@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from overlay import overlay_video
+from .overlay import overlay_video
 
 
 def get_media_overlay_pairs(directory_path: str) -> list[list[str]]:
